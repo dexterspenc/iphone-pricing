@@ -22,14 +22,14 @@ MONTH_MAP: dict[str, int] = {
 
 # iPhone variant keywords (order matters — longer/more-specific first)
 VARIANT_PATTERNS: list[tuple[str, str]] = [
-    (r"pro\s*max", "Pro Max"),
-    (r"pro",        "Pro"),
-    (r"plus",       "Plus"),
-    (r"mini",       "Mini"),
-    (r"xr",         "XR"),
+    (r"pro\s*max",  "Pro Max"),
+    (r"\bpro\b",    "Pro"),
+    (r"\bplus\b",   "Plus"),
+    (r"\bmini\b",   "Mini"),
+    (r"\bxr\b",     "XR"),
     (r"xs\s*max",   "XS Max"),
-    (r"xs",         "XS"),
-    (r"se",         "SE"),
+    (r"\bxs\b",     "XS"),
+    (r"\bse\b",     "SE"),
 ]
 
 # Origin / distributor keywords
