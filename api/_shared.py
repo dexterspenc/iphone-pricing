@@ -1,6 +1,12 @@
 """
 api/_shared.py — Shared helpers for all API functions.
 Underscore prefix = not treated as a Vercel serverless function.
+
+Nego & resale thresholds grounded in data (573 listings, @cherishcomapple):
+  - 75% of listings sit within ±5% of group mean
+  - p10 = -7%  → fast-sell zone
+  - p85 = +5%  → premium zone
+  - Nego only meaningful when diff_pct > 5% (listing in top 15%)
 """
 import os
 import re
@@ -32,13 +38,62 @@ def make_verdict(listing_price: int, low: float, high: float, predicted: float) 
     return {"label": label, "emoji": emoji, "diff_pct": round(diff_pct, 1)}
 
 
+# ── nego recommendation ───────────────────────────────────────────────────────
+
+def make_nego(asking: int, predicted: float, high: float, diff_pct: float) -> Optional[dict]:
+    """
+    Only recommend nego when asking > predicted + 5% (top 15% of market).
+    - target_fair  : bring to predicted (median market price)
+    - target_min   : bring to high (top of WAJAR range, minimum acceptable)
+    """
+    if diff_pct <= 5:
+        return None  # already fair or deal, no nego needed
+
+    target_fair = round(predicted, -3)
+    target_min  = round(high, -3)
+
+    return {
+        "target_fair": target_fair,
+        "target_min":  target_min,
+        "save_fair":   round(asking - target_fair, -3),
+        "save_min":    round(asking - target_min, -3),
+    }
+
+
+# ── resale recommendation ─────────────────────────────────────────────────────
+
+def make_resale(predicted: float, asking: Optional[int]) -> dict:
+    """
+    Three resale tiers grounded in data distribution:
+    - fast    : predicted × 0.93  (p10 = -7%, undercuts 90% of market → quick sale)
+    - normal  : predicted          (p50 = median, fair market)
+    - premium : predicted × 1.05  (p85 = +5%, top 15% → needs patient buyer)
+
+    If asking price known, also show estimated margin at each tier.
+    """
+    fast    = round(predicted * 0.93, -3)
+    normal  = round(predicted,        -3)
+    premium = round(predicted * 1.05, -3)
+
+    result: dict = {"fast": fast, "normal": normal, "premium": premium}
+
+    if asking:
+        result["margin_fast"]    = round(fast    - asking, -3)
+        result["margin_normal"]  = round(normal  - asking, -3)
+        result["margin_premium"] = round(premium - asking, -3)
+
+    return result
+
+
+# ── build full result ─────────────────────────────────────────────────────────
+
 def build_result(parsed: dict, listing_price: Optional[int]) -> dict:
     result = predict_range(
         series=parsed["series"],
         variant=parsed.get("variant", "Regular"),
         storage_gb=parsed.get("storage_gb") or 128,
-        battery_health=parsed.get("battery_health") or 90,   # dataset median
-        physical_condition=parsed.get("physical_condition") or 90,  # dataset median
+        battery_health=parsed.get("battery_health") or 90,
+        physical_condition=parsed.get("physical_condition") or 90,
         origin_type=parsed.get("origin_type") or "iBox",
         regional_code=parsed.get("regional_code") or "PA/A",
         garansi_aktif=parsed.get("garansi_aktif", False),
@@ -49,17 +104,26 @@ def build_result(parsed: dict, listing_price: Optional[int]) -> dict:
         face_id_ok=parsed.get("face_id_ok", True),
         lcd_original=parsed.get("lcd_original", True),
     )
-    price_block = {
-        "predicted": result["predicted_idr"],
-        "low":       result["low_idr"],
-        "high":      result["high_idr"],
+
+    predicted = result["predicted_idr"]
+    low       = result["low_idr"]
+    high      = result["high_idr"]
+
+    price_block: dict = {
+        "predicted": predicted,
+        "low":       low,
+        "high":      high,
         "asking":    listing_price,
         "verdict":   None,
+        "nego":      None,
+        "resale":    make_resale(predicted, listing_price),
     }
+
     if listing_price:
-        price_block["verdict"] = make_verdict(
-            listing_price, result["low_idr"], result["high_idr"], result["predicted_idr"]
-        )
+        vd = make_verdict(listing_price, low, high, predicted)
+        price_block["verdict"] = vd
+        price_block["nego"]    = make_nego(listing_price, predicted, high, vd["diff_pct"])
+
     return {"specs": parsed, "price": price_block}
 
 
@@ -76,37 +140,79 @@ def tg_send(chat_id: int, text: str) -> None:
     )
 
 
+def _fmt(n: int) -> str:
+    return f"Rp {n:,.0f}"
+
+def _margin_label(m: int) -> str:
+    if m > 0:
+        return f"<b>+{_fmt(m)}</b> untung"
+    elif m < 0:
+        return f"{_fmt(m)} rugi"
+    return "impas"
+
+
 def format_tg_reply(result: dict) -> str:
     specs = result["specs"]
     price = result["price"]
 
     model  = specs.get("model", "iPhone")
     st     = specs.get("storage_gb", "?")
-    color  = specs.get("color", "")
+    color  = specs.get("color", "") or ""
     bh     = specs.get("battery_health", "?")
-    origin = specs.get("origin_type", "?")
-    rc     = specs.get("regional_code", "?")
+    origin = specs.get("origin_type", "?") or "?"
+    rc     = specs.get("regional_code", "?") or "?"
 
     pred   = price["predicted"]
     low    = price["low"]
     high   = price["high"]
     asking = price.get("asking")
     vd     = price.get("verdict")
+    nego   = price.get("nego")
+    resale = price.get("resale", {})
 
     lines = [
-        f"<b>{model} {st}GB</b> {color}",
-        f"Battery: {bh}%  |  {origin}  |  {rc}",
+        f"<b>{model} {st}GB</b>{' ' + color if color else ''}",
+        f"BH: {bh}%  |  {origin}  |  {rc}",
         "",
-        f"Prediksi harga wajar: <b>Rp {pred:,.0f}</b>",
-        f"Range: Rp {low:,.0f} - Rp {high:,.0f}",
+        "💰 <b>Analisis Harga</b>",
+        f"Prediksi wajar: <b>{_fmt(pred)}</b>",
+        f"Range: {_fmt(low)} – {_fmt(high)}",
     ]
+
     if asking and vd:
         lines += [
             "",
-            f"Harga listing: Rp {asking:,.0f}",
+            f"Harga listing: {_fmt(asking)}",
             f"Selisih: {vd['diff_pct']:+.1f}%",
             f"Verdict: <b>{vd['emoji']} {vd['label']}</b>",
         ]
+
+    # Nego block
+    if nego:
+        lines += [
+            "",
+            "🤝 <b>Rekomendasi Nego</b>",
+            f"Target ideal : {_fmt(nego['target_fair'])} (hemat {_fmt(nego['save_fair'])})",
+            f"Target minimum: {_fmt(nego['target_min'])} (hemat {_fmt(nego['save_min'])})",
+        ]
+    elif asking and vd:
+        lines += [
+            "",
+            f"🤝 Harga sudah {'deal, tidak perlu nego' if vd['label'] == 'DEAL' else 'wajar, nego minor opsional'}",
+        ]
+
+    # Resale block
+    if resale:
+        lines += ["", "📈 <b>Rekomendasi Harga Jual</b>"]
+        tiers = [
+            ("Cepat laku (-7%)", resale["fast"],    resale.get("margin_fast")),
+            ("Harga wajar",      resale["normal"],  resale.get("margin_normal")),
+            ("Premium (+5%)",    resale["premium"], resale.get("margin_premium")),
+        ]
+        for label, price_val, margin in tiers:
+            margin_str = f"  → {_margin_label(margin)}" if margin is not None else ""
+            lines.append(f"{label}: {_fmt(price_val)}{margin_str}")
+
     return "\n".join(lines)
 
 

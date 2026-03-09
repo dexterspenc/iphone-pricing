@@ -3,12 +3,16 @@
 import { useState } from "react";
 
 type Verdict = { label: string; emoji: string; diff_pct: number };
+type Nego = { target_fair: number; target_min: number; save_fair: number; save_min: number };
+type Resale = { fast: number; normal: number; premium: number; margin_fast?: number; margin_normal?: number; margin_premium?: number };
 type PriceBlock = {
   predicted: number;
   low: number;
   high: number;
   asking: number | null;
   verdict: Verdict | null;
+  nego: Nego | null;
+  resale: Resale | null;
 };
 type Specs = {
   model: string;
@@ -144,6 +148,56 @@ function ResultCard({ result }: { result: CheckResult }) {
           </div>
         </div>
       </div>
+
+      {/* Nego */}
+      {price.asking && (
+        <div className="card space-y-2">
+          <h3 className="font-semibold text-sm text-[#a3a3a3] uppercase tracking-wider">Rekomendasi Nego</h3>
+          {price.nego ? (
+            <div className="space-y-1.5 text-sm">
+              <div className="flex justify-between">
+                <span className="text-[#a3a3a3]">Target ideal</span>
+                <span className="font-semibold text-white">{fmt(price.nego.target_fair)}<span className="text-green-400 text-xs ml-1">hemat {fmt(price.nego.save_fair)}</span></span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[#a3a3a3]">Target minimum</span>
+                <span className="font-semibold text-[#d4d4d4]">{fmt(price.nego.target_min)}<span className="text-green-400 text-xs ml-1">hemat {fmt(price.nego.save_min)}</span></span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-[#737373]">
+              {price.verdict?.label === "DEAL" ? "Harga sudah deal, tidak perlu nego." : "Harga sudah wajar, nego minor opsional."}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Resale */}
+      {price.resale && (
+        <div className="card space-y-2">
+          <h3 className="font-semibold text-sm text-[#a3a3a3] uppercase tracking-wider">Rekomendasi Harga Jual</h3>
+          <div className="space-y-1.5 text-sm">
+            {([
+              ["Cepat laku (-7%)", price.resale.fast,    price.resale.margin_fast],
+              ["Harga wajar",      price.resale.normal,  price.resale.margin_normal],
+              ["Premium (+5%)",    price.resale.premium, price.resale.margin_premium],
+            ] as [string, number, number | undefined][]).map(([label, val, margin]) => (
+              <div key={label} className="flex justify-between items-baseline">
+                <span className="text-[#a3a3a3]">{label}</span>
+                <span className="text-right">
+                  <span className="font-semibold text-[#d4d4d4]">{fmt(val)}</span>
+                  {margin !== undefined && (
+                    <span className={`text-xs ml-1.5 ${margin >= 0 ? "text-green-400" : "text-red-400"}`}>
+                      {margin >= 0 ? "+" : ""}{fmt(margin)}
+                    </span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+          {price.asking && <p className="text-xs text-[#525252] pt-1">Margin dihitung dari harga listing {fmt(price.asking)}</p>}
+        </div>
+      )}
 
       {/* Specs */}
       <div className="card space-y-3">
