@@ -2,8 +2,8 @@ name: Monthly Scrape & Retrain
 
 on:
   schedule:
-    # 1st of every month at 02:00 UTC (09:00 WIB)
-    - cron: "0 2 1 * *"
+    # 11th of every month at 02:00 UTC (09:00 WIB)
+    - cron: "0 2 11 * *"
   workflow_dispatch:  # allow manual trigger
 
 jobs:
