@@ -180,38 +180,56 @@ def format_tg_reply(result: dict) -> str:
     ]
 
     if asking and vd:
+        diff = vd['diff_pct']
+        if vd['label'] == "DEAL":
+            summary = f"{abs(diff):.1f}% lebih murah dari harga pasar — harga bagus"
+        elif vd['label'] == "OVERPRICE":
+            summary = f"{diff:.1f}% di atas harga pasar — terlalu mahal"
+        elif diff > 0:
+            summary = f"{diff:.1f}% di atas prediksi — masih rentang normal"
+        elif diff < 0:
+            summary = f"{abs(diff):.1f}% di bawah prediksi — harga oke"
+        else:
+            summary = "Tepat di harga pasar"
+
         lines += [
             "",
             f"Harga listing: {_fmt(asking)}",
-            f"Selisih: {vd['diff_pct']:+.1f}%",
             f"Verdict: <b>{vd['emoji']} {vd['label']}</b>",
+            f"<i>{summary}</i>",
         ]
 
     # Nego block
     if nego:
         lines += [
             "",
-            "🤝 <b>Rekomendasi Nego</b>",
-            f"Target ideal : {_fmt(nego['target_fair'])} (hemat {_fmt(nego['save_fair'])})",
-            f"Target minimum: {_fmt(nego['target_min'])} (hemat {_fmt(nego['save_min'])})",
+            "🤝 <b>Nego</b>",
+            "Listing ini kemahalan. Coba tawar ke:",
+            f"  Ideal (harga pasar) : {_fmt(nego['target_fair'])} — hemat {_fmt(nego['save_fair'])}",
+            f"  Minimum (batas wajar): {_fmt(nego['target_min'])} — hemat {_fmt(nego['save_min'])}",
         ]
     elif asking and vd:
-        lines += [
-            "",
-            f"🤝 Harga sudah {'deal, tidak perlu nego' if vd['label'] == 'DEAL' else 'wajar, nego minor opsional'}",
-        ]
+        if vd['label'] == "DEAL":
+            nego_note = "Harga sudah bagus banget, tidak perlu nego."
+        else:
+            nego_note = "Harga masuk akal. Nego kecil boleh dicoba, tapi seller belum tentu mau."
+        lines += ["", f"🤝 {nego_note}"]
 
     # Resale block
     if resale:
-        lines += ["", "📈 <b>Rekomendasi Harga Jual</b>"]
+        if asking:
+            lines += ["", f"📈 <b>Estimasi Harga Jual</b> (jika beli di {_fmt(asking)}):"]
+            lines.append(f"  BEP (balik modal) : {_fmt(asking)}")
+        else:
+            lines += ["", "📈 <b>Estimasi Harga Jual</b>"]
         tiers = [
-            ("Cepat laku (-7%)", resale["fast"],    resale.get("margin_fast")),
-            ("Harga wajar",      resale["normal"],  resale.get("margin_normal")),
-            ("Premium (+5%)",    resale["premium"], resale.get("margin_premium")),
+            ("Cepat laku",  resale["fast"],    resale.get("margin_fast")),
+            ("Harga pasar", resale["normal"],  resale.get("margin_normal")),
+            ("Premium",     resale["premium"], resale.get("margin_premium")),
         ]
         for label, price_val, margin in tiers:
-            margin_str = f"  → {_margin_label(margin)}" if margin is not None else ""
-            lines.append(f"{label}: {_fmt(price_val)}{margin_str}")
+            margin_str = f" → {_margin_label(margin)}" if margin is not None else ""
+            lines.append(f"  {label}: {_fmt(price_val)}{margin_str}")
 
     return "\n".join(lines)
 

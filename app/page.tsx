@@ -125,11 +125,15 @@ function ResultCard({ result }: { result: CheckResult }) {
           <div className="text-3xl mb-1">{vd.emoji}</div>
           <div className="text-xl font-bold">{vd.label}</div>
           <div className="text-sm mt-1 opacity-80">
-            {vd.diff_pct > 0
-              ? `${vd.diff_pct.toFixed(1)}% di atas harga wajar`
+            {vd.label === "DEAL"
+              ? `${Math.abs(vd.diff_pct).toFixed(1)}% lebih murah dari harga pasar — harga bagus, layak dibeli`
+              : vd.label === "OVERPRICE"
+              ? `${vd.diff_pct.toFixed(1)}% di atas harga pasar — terlalu mahal, pertimbangkan nego`
+              : vd.diff_pct > 0
+              ? `${vd.diff_pct.toFixed(1)}% di atas prediksi — masih dalam rentang normal`
               : vd.diff_pct < 0
-              ? `${Math.abs(vd.diff_pct).toFixed(1)}% di bawah harga wajar`
-              : "Tepat di harga wajar"}
+              ? `${Math.abs(vd.diff_pct).toFixed(1)}% di bawah prediksi — harga oke`
+              : "Tepat di harga pasar"}
           </div>
         </div>
       )}
@@ -154,19 +158,24 @@ function ResultCard({ result }: { result: CheckResult }) {
         <div className="card space-y-2">
           <h3 className="font-semibold text-sm text-[#a3a3a3] uppercase tracking-wider">Rekomendasi Nego</h3>
           {price.nego ? (
-            <div className="space-y-1.5 text-sm">
-              <div className="flex justify-between">
-                <span className="text-[#a3a3a3]">Target ideal</span>
-                <span className="font-semibold text-white">{fmt(price.nego.target_fair)}<span className="text-green-400 text-xs ml-1">hemat {fmt(price.nego.save_fair)}</span></span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#a3a3a3]">Target minimum</span>
-                <span className="font-semibold text-[#d4d4d4]">{fmt(price.nego.target_min)}<span className="text-green-400 text-xs ml-1">hemat {fmt(price.nego.save_min)}</span></span>
+            <div className="space-y-2 text-sm">
+              <p className="text-[#737373]">Listing ini kemahalan. Coba tawar ke harga berikut:</p>
+              <div className="space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-[#a3a3a3]">Ideal (harga pasar)</span>
+                  <span className="font-semibold text-white">{fmt(price.nego.target_fair)} <span className="text-green-400 text-xs">hemat {fmt(price.nego.save_fair)}</span></span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#a3a3a3]">Minimum (batas wajar)</span>
+                  <span className="font-semibold text-[#d4d4d4]">{fmt(price.nego.target_min)} <span className="text-green-400 text-xs">hemat {fmt(price.nego.save_min)}</span></span>
+                </div>
               </div>
             </div>
           ) : (
             <p className="text-sm text-[#737373]">
-              {price.verdict?.label === "DEAL" ? "Harga sudah deal, tidak perlu nego." : "Harga sudah wajar, nego minor opsional."}
+              {price.verdict?.label === "DEAL"
+                ? "Harga sudah bagus banget, tidak perlu nego."
+                : "Harga sudah masuk akal. Nego kecil boleh dicoba, tapi seller belum tentu mau."}
             </p>
           )}
         </div>
@@ -175,27 +184,40 @@ function ResultCard({ result }: { result: CheckResult }) {
       {/* Resale */}
       {price.resale && (
         <div className="card space-y-2">
-          <h3 className="font-semibold text-sm text-[#a3a3a3] uppercase tracking-wider">Rekomendasi Harga Jual</h3>
+          <h3 className="font-semibold text-sm text-[#a3a3a3] uppercase tracking-wider">Estimasi Harga Jual</h3>
+          {price.asking && (
+            <p className="text-xs text-[#737373]">
+              Jika beli di harga listing {fmt(price.asking)}, ini estimasi profit/rugi di tiap skenario jual:
+            </p>
+          )}
           <div className="space-y-1.5 text-sm">
+            {price.asking && (
+              <div className="flex justify-between items-baseline text-[#525252]">
+                <span>BEP (balik modal)</span>
+                <span className="font-medium">{fmt(price.asking)}</span>
+              </div>
+            )}
             {([
-              ["Cepat laku (-7%)", price.resale.fast,    price.resale.margin_fast],
-              ["Harga wajar",      price.resale.normal,  price.resale.margin_normal],
-              ["Premium (+5%)",    price.resale.premium, price.resale.margin_premium],
-            ] as [string, number, number | undefined][]).map(([label, val, margin]) => (
-              <div key={label} className="flex justify-between items-baseline">
-                <span className="text-[#a3a3a3]">{label}</span>
-                <span className="text-right">
-                  <span className="font-semibold text-[#d4d4d4]">{fmt(val)}</span>
-                  {margin !== undefined && (
-                    <span className={`text-xs ml-1.5 ${margin >= 0 ? "text-green-400" : "text-red-400"}`}>
-                      {margin >= 0 ? "+" : ""}{fmt(margin)}
-                    </span>
-                  )}
-                </span>
+              ["Cepat laku",  "jual -7% bawah pasar, prioritas kecepatan", price.resale.fast,    price.resale.margin_fast],
+              ["Harga pasar", "jual di harga pasar wajar",                  price.resale.normal,  price.resale.margin_normal],
+              ["Premium",     "jual +5% atas pasar, butuh waktu lebih",     price.resale.premium, price.resale.margin_premium],
+            ] as [string, string, number, number | undefined][]).map(([label, desc, val, margin]) => (
+              <div key={label}>
+                <div className="flex justify-between items-baseline">
+                  <span className="text-[#a3a3a3] font-medium">{label}</span>
+                  <span className="text-right">
+                    <span className="font-semibold text-[#d4d4d4]">{fmt(val)}</span>
+                    {margin !== undefined && (
+                      <span className={`text-xs ml-1.5 ${margin >= 0 ? "text-green-400" : "text-red-400"}`}>
+                        {margin >= 0 ? `+${fmt(margin)} untung` : `${fmt(margin)} rugi`}
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <div className="text-xs text-[#525252]">{desc}</div>
               </div>
             ))}
           </div>
-          {price.asking && <p className="text-xs text-[#525252] pt-1">Margin dihitung dari harga listing {fmt(price.asking)}</p>}
         </div>
       )}
 
