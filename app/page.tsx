@@ -139,7 +139,7 @@ function ResultCard({ result }: { result: CheckResult }) {
           )}
           <Row label="Prediksi harga wajar" value={fmt(price.predicted)} highlight />
           <div className="flex items-center justify-between text-xs text-[#737373]">
-            <span>Range ±10%</span>
+            <span>Range ±15%</span>
             <span>{fmt(price.low)} – {fmt(price.high)}</span>
           </div>
         </div>

@@ -1,0 +1,50 @@
+name: Monthly Scrape & Retrain
+
+on:
+  schedule:
+    # 1st of every month at 02:00 UTC (09:00 WIB)
+    - cron: "0 2 1 * *"
+  workflow_dispatch:  # allow manual trigger
+
+jobs:
+  scrape-and-retrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}  # PAT needed to push model files back
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Scrape new listings
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
+        run: python scraper/pipeline.py
+
+      - name: Retrain model
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python model/train.py
+
+      - name: Commit & push updated model
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add model/saved_models/iphone_price_model.joblib \
+                  model/saved_models/iphone_encoders.joblib \
+                  model/saved_models/iphone_meta.json
+          git diff --staged --quiet || git commit -m "chore: monthly retrain [skip ci]"
+          git push

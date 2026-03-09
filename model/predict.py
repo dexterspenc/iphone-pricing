@@ -82,12 +82,16 @@ def predict_price(
 
 
 def predict_range(series: int, **kwargs) -> dict:
-    """Return predicted price with a +/-10% confidence interval."""
+    """Return predicted price with a +/-15% confidence interval.
+
+    Within-group price std across models is 7-13%, so ±15% covers ~1 sigma
+    naturally and avoids excessive false DEAL/OVERPRICE verdicts.
+    """
     price = predict_price(series=series, **kwargs)
     return {
         "predicted_idr": round(price, -3),
-        "low_idr":        round(price * 0.90, -3),
-        "high_idr":       round(price * 1.10, -3),
+        "low_idr":        round(price * 0.85, -3),
+        "high_idr":       round(price * 1.15, -3),
     }
 
 
