@@ -1,10 +1,8 @@
 {
   "functions": {
-    "api/index.py": {
-      "maxDuration": 30
-    }
-  },
-  "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/index" }
-  ]
+    "api/check.py":    { "maxDuration": 30 },
+    "api/predict.py":  { "maxDuration": 30 },
+    "api/listings.py": { "maxDuration": 10 },
+    "api/bot.py":      { "maxDuration": 10 }
+  }
 }
