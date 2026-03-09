@@ -126,9 +126,12 @@ def parse_caption(caption: str, date_posted: Optional[date] = None) -> Optional[
         color = color_match.group(1).strip()
 
     # ------------------------------------------------------------------
-    # 4. Battery health
+    # 4. Battery health  ("Battery Health 90%" / "BH 90%" / "bh: 90")
     # ------------------------------------------------------------------
-    battery_match = re.search(r"battery\s*health\s*[:\-]?\s*(\d{1,3})\s*%", lower)
+    battery_match = re.search(
+        r"(?:battery\s*health|bh)\s*[:\-]?\s*(\d{1,3})\s*%?",
+        lower,
+    )
     battery_health = int(battery_match.group(1)) if battery_match else None
 
     # ------------------------------------------------------------------

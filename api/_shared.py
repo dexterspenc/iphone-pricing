@@ -37,8 +37,8 @@ def build_result(parsed: dict, listing_price: Optional[int]) -> dict:
         series=parsed["series"],
         variant=parsed.get("variant", "Regular"),
         storage_gb=parsed.get("storage_gb") or 128,
-        battery_health=parsed.get("battery_health") or 100,
-        physical_condition=parsed.get("physical_condition") or 95,
+        battery_health=parsed.get("battery_health") or 90,   # dataset median
+        physical_condition=parsed.get("physical_condition") or 90,  # dataset median
         origin_type=parsed.get("origin_type") or "iBox",
         regional_code=parsed.get("regional_code") or "PA/A",
         garansi_aktif=parsed.get("garansi_aktif", False),
