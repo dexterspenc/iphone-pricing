@@ -20,12 +20,12 @@
     "is_latest",
     "series_x_storage"
   ],
-  "cv_r2_mean": 0.9849,
-  "cv_r2_std": 0.0084,
-  "cv_mae_mean": 371998.0,
-  "cv_mae_std": 50498.0,
-  "train_r2": 0.9939,
-  "train_mae": 258556.0,
+  "cv_r2_mean": 0.9848,
+  "cv_r2_std": 0.0069,
+  "cv_mae_mean": 368830.0,
+  "cv_mae_std": 54923.0,
+  "train_r2": 0.994,
+  "train_mae": 263729.0,
   "gbr_params": {
     "alpha": 0.9,
     "ccp_alpha": 0.0,
