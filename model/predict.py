@@ -52,6 +52,8 @@ def predict_price(
     has_manual: bool = True,
     face_id_ok: bool = True,
     lcd_original: bool = True,
+    battery_replaced: bool = False,
+    has_aftermarket_part: bool = False,
     color: str = "Unknown",
 ) -> float:
     """Return predicted resale price in IDR."""
@@ -72,6 +74,8 @@ def predict_price(
         "has_manual":              has_manual,
         "face_id_ok":              face_id_ok,
         "lcd_original":            lcd_original,
+        "battery_replaced":        battery_replaced,
+        "has_aftermarket_part":    has_aftermarket_part,
         "color":                   color,
     }
 

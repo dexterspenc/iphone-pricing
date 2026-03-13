@@ -103,6 +103,8 @@ def build_result(parsed: dict, listing_price: Optional[int]) -> dict:
         has_manual=parsed.get("has_manual", True),
         face_id_ok=parsed.get("face_id_ok", True),
         lcd_original=parsed.get("lcd_original", True),
+        battery_replaced=parsed.get("battery_replaced", False),
+        has_aftermarket_part=parsed.get("has_aftermarket_part", False),
     )
 
     predicted = result["predicted_idr"]

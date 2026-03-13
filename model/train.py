@@ -122,7 +122,7 @@ def engineer_features(df: pd.DataFrame, encoders: dict | None = None, fit: bool 
 
     # ---- booleans → int ----
     for c in ["garansi_aktif", "has_box", "has_charger", "has_manual", "face_id_ok", "lcd_original", "battery_replaced", "has_aftermarket_part"]:
-        df[c] = df[c].fillna(False).astype(int)
+        df[c] = df[c].fillna(False).astype(int) if c in df.columns else 0
 
     # ---- warranty days remaining ----
     def _days(row):
