@@ -11,6 +11,8 @@ Usage
     python model/train.py --eval    # show detailed evaluation only, no save
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
