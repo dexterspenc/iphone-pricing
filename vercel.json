@@ -3,7 +3,6 @@
     "api/check.py":    { "maxDuration": 30 },
     "api/predict.py":  { "maxDuration": 30 },
     "api/listings.py": { "maxDuration": 10 },
-    "api/bot.py":      { "maxDuration": 10 },
-    "api/debug.py":    { "maxDuration": 10 }
+    "api/bot.py":      { "maxDuration": 10 }
   }
 }
