@@ -1,8 +1,8 @@
 {
   "functions": {
-    "api/check.py":    { "maxDuration": 30, "runtime": "python3.12" },
-    "api/predict.py":  { "maxDuration": 30, "runtime": "python3.12" },
-    "api/listings.py": { "maxDuration": 10, "runtime": "python3.12" },
-    "api/bot.py":      { "maxDuration": 10, "runtime": "python3.12" }
+    "api/check.py":    { "maxDuration": 30 },
+    "api/predict.py":  { "maxDuration": 30 },
+    "api/listings.py": { "maxDuration": 10 },
+    "api/bot.py":      { "maxDuration": 10 }
   }
 }
