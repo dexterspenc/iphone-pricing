@@ -1,4 +1,4 @@
-"""api/debug.py — Temporary import-chain diagnostic. DELETE after fix."""
+"""api/debug.py — Temporary runtime diagnostic. DELETE after fix."""
 import sys
 import traceback
 from pathlib import Path
@@ -13,24 +13,38 @@ app = FastAPI()
 
 @app.get("/api/debug")
 def debug():
-    results = {}
+    results = {"python_version": sys.version}
 
-    steps = [
-        ("scraper.parser",      "from scraper.parser import parse_caption"),
-        ("model.train import",  "from model.train import FEATURES, engineer_features"),
-        ("model.predict",       "from model.predict import predict_range"),
-        ("api._shared",         "from _shared import build_result"),
-    ]
+    try:
+        from scraper.parser import parse_caption
+        from _shared import build_result
 
-    for name, stmt in steps:
-        try:
-            exec(stmt, {"__builtins__": __builtins__})
-            results[name] = "OK"
-        except Exception as e:
-            results[name] = f"ERROR: {type(e).__name__}: {e}"
-            results["traceback_" + name] = traceback.format_exc()
-            break  # stop at first failure
+        caption = (
+            "iPhone 16 Pro Max 256 GB Desert Titanium\n"
+            "iBox\n"
+            "Fisik 95%\n"
+            "Battery Health 98%\n"
+            "Face ID OK\n"
+            "LCD Original\n"
+            "Box\n"
+            "Charger cable\n"
+            "SA/A\n"
+            "IDR 17.600.000\n"
+            "Kode Barang: DEBUGTEST1"
+        )
 
-    results["python_version"] = sys.version
-    results["sys_path"] = sys.path[:5]
+        parsed = parse_caption(caption)
+        results["parsed_series"]  = parsed.get("series")
+        results["parsed_variant"] = parsed.get("variant")
+
+        result = build_result(parsed, 17_600_000)
+        results["predicted"] = result["price"]["predicted"]
+        results["verdict"]   = result["price"]["verdict"]["label"]
+        results["status"]    = "OK"
+
+    except Exception as e:
+        results["status"]    = "ERROR"
+        results["error"]     = f"{type(e).__name__}: {e}"
+        results["traceback"] = traceback.format_exc()
+
     return results
