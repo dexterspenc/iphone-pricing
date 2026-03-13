@@ -62,6 +62,7 @@ def _fetch_existing_source_codes(client: Client) -> set[str]:
 
 def run_pipeline(
     use_cached: bool = False,
+    since: Optional[date] = None,
 ) -> None:
     print("=" * 60)
     print("iPhone Pricing Pipeline")
@@ -75,8 +76,9 @@ def run_pipeline(
             print("[pipeline] No cached captions found. Run without --cached first.")
             return
     else:
-        print("[pipeline] Scraping @cherishcomapple (2025-08-01 -> today) ...")
-        raw_records = scrape_profile()
+        effective_since = since or date(2025, 8, 1)
+        print(f"[pipeline] Scraping @cherishcomapple ({effective_since.isoformat()} -> today) ...")
+        raw_records = scrape_profile(since=effective_since)
 
     print(f"[pipeline] {len(raw_records)} raw posts loaded.")
 
@@ -120,6 +122,9 @@ def run_pipeline(
     print(f"[pipeline] {skipped_parse_fail} skipped (parse failed / not iPhone listing).")
 
     # 4. Insert to Supabase -------------------------------------------------
+    # Note: battery_replaced and has_aftermarket_part are now included in
+    # parsed dicts. Requires a Supabase migration adding these BOOLEAN columns
+    # before running the pipeline against the live table.
     if not new_listings:
         print("[pipeline] Nothing to insert. Done.")
         return
@@ -148,6 +153,13 @@ if __name__ == "__main__":
         action="store_true",
         help="Use cached raw_captions.json instead of scraping live",
     )
+    parser.add_argument(
+        "--since",
+        type=date.fromisoformat,
+        default=None,
+        metavar="YYYY-MM-DD",
+        help="Earliest post date to scrape (default: 2025-08-01)",
+    )
     args = parser.parse_args()
 
-    run_pipeline(use_cached=args.cached)
+    run_pipeline(use_cached=args.cached, since=args.since)

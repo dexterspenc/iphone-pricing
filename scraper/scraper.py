@@ -16,15 +16,36 @@ from pathlib import Path
 
 from apify_client import ApifyClient
 from dotenv import load_dotenv
+from supabase import create_client
 
 load_dotenv()
 
 TARGET_PROFILE  = "cherishcomapple"
 RAW_OUTPUT_FILE = Path(__file__).parent / "raw_captions.json"
-START_DATE      = date(2025, 8, 1)
+FALLBACK_START  = date(2025, 11, 1)   # used when Supabase is empty (first-time setup)
 
 # Apify actor for Instagram scraping
 ACTOR_ID = "apify/instagram-scraper"
+
+
+def _get_since_from_supabase() -> date:
+    """Return MAX(date_posted) from listings, or FALLBACK_START if table is empty."""
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_KEY")
+    if not url or not key:
+        print(f"[scraper] Supabase creds not set — using fallback start date {FALLBACK_START}.")
+        return FALLBACK_START
+    try:
+        client = create_client(url, key)
+        resp = client.table("listings").select("date_posted").order("date_posted", desc=True).limit(1).execute()
+        if resp.data and resp.data[0].get("date_posted"):
+            latest = date.fromisoformat(resp.data[0]["date_posted"])
+            print(f"[scraper] Latest date_posted in Supabase: {latest}. Using as scrape start.")
+            return latest
+    except Exception as e:
+        print(f"[scraper] Could not query Supabase ({e}) — using fallback start date {FALLBACK_START}.")
+    print(f"[scraper] No rows in Supabase — using fallback start date {FALLBACK_START}.")
+    return FALLBACK_START
 
 
 # ---------------------------------------------------------------------------
@@ -33,7 +54,7 @@ ACTOR_ID = "apify/instagram-scraper"
 
 def scrape_profile(
     resume_from_json: bool = True,
-    since: date = START_DATE,
+    since: date | None = None,
 ) -> list[dict]:
     """
     Run the Apify Instagram Scraper actor for @cherishcomapple and return
@@ -46,6 +67,9 @@ def scrape_profile(
                        results with the existing cache (dedup by shortcode).
     since            : Earliest post date to include (inclusive).
     """
+    if since is None:
+        since = _get_since_from_supabase()
+
     api_token = os.getenv("APIFY_API_TOKEN")
     if not api_token:
         raise EnvironmentError("APIFY_API_TOKEN must be set in .env")

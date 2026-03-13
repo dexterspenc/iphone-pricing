@@ -1,5 +1,5 @@
 {
-  "n_samples": 573,
+  "n_samples": 1318,
   "features": [
     "series_num",
     "storage_gb",
@@ -12,6 +12,8 @@
     "has_manual",
     "face_id_ok",
     "lcd_original",
+    "battery_replaced",
+    "has_aftermarket_part",
     "variant_enc",
     "origin_enc",
     "regional_enc",
@@ -20,12 +22,12 @@
     "is_latest",
     "series_x_storage"
   ],
-  "cv_r2_mean": 0.9848,
-  "cv_r2_std": 0.0069,
-  "cv_mae_mean": 368830.0,
-  "cv_mae_std": 54923.0,
-  "train_r2": 0.994,
-  "train_mae": 263729.0,
+  "cv_r2_mean": 0.9845,
+  "cv_r2_std": 0.0081,
+  "cv_mae_mean": 371769.0,
+  "cv_mae_std": 23774.0,
+  "train_r2": 0.991,
+  "train_mae": 301735.0,
   "gbr_params": {
     "alpha": 0.9,
     "ccp_alpha": 0.0,
@@ -50,7 +52,7 @@
     "warm_start": false
   },
   "series_seen": [
-    7,
+    8,
     11,
     12,
     13,

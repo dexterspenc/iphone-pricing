@@ -52,6 +52,8 @@ FEATURES = [
     "has_manual",
     "face_id_ok",
     "lcd_original",
+    "battery_replaced",
+    "has_aftermarket_part",
     # Encoded categoricals
     "variant_enc",
     "origin_enc",
@@ -74,7 +76,14 @@ def _load_from_supabase() -> pd.DataFrame:
     if not url or not key:
         raise EnvironmentError("SUPABASE_URL and SUPABASE_KEY must be set in .env")
     client = create_client(url, key)
-    return pd.DataFrame(client.table("listings").select("*").execute().data)
+    rows, offset, page = [], 0, 1000
+    while True:
+        batch = client.table("listings").select("*").range(offset, offset + page - 1).execute().data
+        rows.extend(batch)
+        if len(batch) < page:
+            break
+        offset += page
+    return pd.DataFrame(rows)
 
 
 # ---------------------------------------------------------------------------
@@ -112,7 +121,7 @@ def engineer_features(df: pd.DataFrame, encoders: dict | None = None, fit: bool 
     df["physical_condition"] = pd.to_numeric(df["physical_condition"], errors="coerce").fillna(90).astype(float)
 
     # ---- booleans → int ----
-    for c in ["garansi_aktif", "has_box", "has_charger", "has_manual", "face_id_ok", "lcd_original"]:
+    for c in ["garansi_aktif", "has_box", "has_charger", "has_manual", "face_id_ok", "lcd_original", "battery_replaced", "has_aftermarket_part"]:
         df[c] = df[c].fillna(False).astype(int)
 
     # ---- warranty days remaining ----
@@ -148,7 +157,15 @@ def engineer_features(df: pd.DataFrame, encoders: dict | None = None, fit: bool 
     variant_col = df["variant"].str.strip()
     df["is_pro_max"] = (variant_col == "Pro Max").astype(int)
     df["is_pro"]     = (variant_col.isin(["Pro", "Pro Max"])).astype(int)
-    df["is_latest"]  = (df["series_num"] >= 15).astype(int)
+
+    # is_latest: top-2 most recent series in training data — auto-adjusts as new series arrive
+    if fit:
+        unique_series = sorted(df["series_num"].dropna().unique())
+        latest_threshold = unique_series[-2] if len(unique_series) >= 2 else unique_series[-1]
+        encoders["latest_series_threshold"] = int(latest_threshold)
+    else:
+        latest_threshold = encoders.get("latest_series_threshold", 15)  # fallback for old saved models
+    df["is_latest"] = (df["series_num"] >= latest_threshold).astype(int)
 
     # The single most powerful feature: captures price tier naturally
     df["series_x_storage"] = df["series_num"] * df["storage_gb"]
@@ -173,7 +190,8 @@ def train(eval_only: bool = False) -> None:
     # Clean: require series, storage, price; drop placeholder prices
     df = df_raw.dropna(subset=["series", "storage_gb", "price_idr"]).copy()
     df["price_idr"] = pd.to_numeric(df["price_idr"], errors="coerce")
-    df = df[df["price_idr"] >= MIN_PRICE]
+    df = df[df["price_idr"] >= 1_000_000]   # explicit floor — guards against price=1 placeholders
+    df = df[df["series"] != 7]              # iPhone 7: only 2 rows, no meaningful signal
     print(f"[train] {len(df)} clean rows after filtering (dropped {len(df_raw) - len(df)}).")
 
     X, encoders = engineer_features(df, fit=True)

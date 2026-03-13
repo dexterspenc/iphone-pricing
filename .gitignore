@@ -33,6 +33,14 @@ yarn-error.log*
 scraper/raw_captions.json
 scraper/__pycache__/
 
+# Claude Code internal files
+.claude/
+
+# Per-series model files (only single model used in production)
+model/saved_models/series_*.joblib
+model/saved_models/series_*_meta.json
+model/saved_encoders/series_*.joblib
+
 # OS
 .DS_Store
 Thumbs.db

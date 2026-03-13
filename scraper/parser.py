@@ -67,6 +67,14 @@ def _flag(pattern: str, text: str) -> bool:
     return bool(re.search(pattern, text, re.IGNORECASE))
 
 
+def _flag_negated(pattern: str, text: str) -> bool:
+    """Return True if pattern matches a line that starts with ❌ (item explicitly absent)."""
+    for line in text.splitlines():
+        if line.strip().startswith("\u274c") and re.search(pattern, line, re.IGNORECASE):
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Main parser
 # ---------------------------------------------------------------------------
@@ -135,6 +143,22 @@ def parse_caption(caption: str, date_posted: Optional[date] = None) -> Optional[
     battery_health = int(battery_match.group(1)) if battery_match else None
 
     # ------------------------------------------------------------------
+    # 4b. Battery replaced — True when caption indicates battery was
+    #     swapped (original or aftermarket).  Separate from battery_health
+    #     because a replaced battery often reports 100% but degrades faster.
+    # ------------------------------------------------------------------
+    battery_replaced = (
+        _flag(r"replace\s*bat(tery|erai|t)", lower) or      # replace battery/baterai
+        _flag(r"ganti\s*bat(tery|erai|t)", lower) or         # ganti battery/baterai
+        _flag(r"sudah\s*ganti", lower) or                    # sudah ganti (context: battery)
+        _flag(r"pernah\s*ganti", lower) or                   # pernah ganti
+        any(                                                  # "aftermarket" on same line as battery
+            re.search(r"bat(tery|erai|h|t)", _line) and re.search(r"aftermarket", _line)
+            for _line in lower.splitlines()
+        )
+    )
+
+    # ------------------------------------------------------------------
     # 5. Physical condition  ("Fisik 95%" / "kondisi fisik 95")
     # ------------------------------------------------------------------
     phys_match = re.search(r"fisik\s*[:\-]?\s*(\d{1,3})\s*%?", lower)
@@ -184,15 +208,44 @@ def parse_caption(caption: str, date_posted: Optional[date] = None) -> Optional[
     # ------------------------------------------------------------------
     # 9. Accessories / accessories flags
     # ------------------------------------------------------------------
-    has_box     = _flag(r"\bbox\b",                          lower)
-    has_charger = _flag(r"charger",                          lower)
-    has_manual  = _flag(r"manual\s*(book)?",                 lower)
+    has_box    = _flag(r"\bbox\b", lower)    and not _flag_negated(r"\bbox\b",         lower)
+    has_manual = _flag(r"manual\s*(book)?", lower) and not _flag_negated(r"manual\s*(book)?", lower)
+
+    # Charger: True only if a charger line exists WITHOUT an aftermarket qualifier
+    # AND without a leading ❌.
+    _CHARGER_AFTERMARKET = r"aftermarket|ugreen|anker|baseus|non\s*original|bukan\s*original"
+    has_charger = False
+    for _line in lower.splitlines():
+        if ("charger" in _line
+                and not _line.strip().startswith("\u274c")
+                and not re.search(_CHARGER_AFTERMARKET, _line)):
+            has_charger = True
+            break
 
     # ------------------------------------------------------------------
     # 10. Device condition flags
     # ------------------------------------------------------------------
-    face_id_ok   = _flag(r"face\s*id\s*(oke|ok|lancar|normal|work)", lower)
-    lcd_original = _flag(r"lcd\s*original",                          lower)
+    face_id_ok = (_flag(r"face\s*id\s*(oke|ok|lancar|normal|work)", lower)
+                  and not _flag_negated(r"face\s*id", lower))
+
+    # lcd_original: any negative qualifier OR ❌ line takes precedence.
+    _LCD_NEGATIVE = (
+        _flag(r"lcd.{0,30}(aftermarket|non\s*original|bukan\s*original)", lower) or
+        _flag(r"(aftermarket|non\s*original|bukan\s*original).{0,30}lcd",  lower) or
+        _flag(r"ganti\s*lcd", lower) or
+        _flag_negated(r"lcd", lower)
+    )
+    lcd_original = _flag(r"lcd\s*original", lower) and not _LCD_NEGATIVE
+
+    # ------------------------------------------------------------------
+    # 10b. Catch-all aftermarket / repair flag — general price-down signal
+    # ------------------------------------------------------------------
+    has_aftermarket_part = (
+        _flag(r"aftermarket", lower) or
+        _flag(r"repair\s*ic",  lower) or
+        _flag(r"ganti\s*ic",   lower) or
+        _flag(r"refurb",       lower)
+    )
 
     # ------------------------------------------------------------------
     # 11. Price  (IDR 17.600.000 / Rp 17.600.000 / 17600000)
@@ -245,6 +298,8 @@ def parse_caption(caption: str, date_posted: Optional[date] = None) -> Optional[
         "has_manual":              has_manual,
         "face_id_ok":              face_id_ok,
         "lcd_original":            lcd_original,
+        "battery_replaced":        battery_replaced,
+        "has_aftermarket_part":    has_aftermarket_part,
         "price_idr":               price_idr,
         "source_code":             source_code,
         "notes":                   notes,
