@@ -1,9 +1,9 @@
 """
-pipeline.py — Orchestrator: scrape -> parse -> save to Supabase.
+pipeline.py — Orchestrator: scrape -> parse -> save to Google Sheets.
 
 Usage
 -----
-    # Full run (scrape live + upsert)
+    # Full run (scrape live + append new rows)
     python scraper/pipeline.py
 
     # Dry-run using cached raw_captions.json (no Instagram login needed)
@@ -14,46 +14,119 @@ Usage
 """
 
 import argparse
-import os
 import sys
-from datetime import date
+import uuid
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-from supabase import create_client, Client
 
-# Make sure sibling modules are importable when running from repo root
+# Make sure sibling modules and api/ helpers are importable from repo root
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "api"))
 
 from scraper import scrape_profile, load_cached_captions
 from parser import parse_caption
+from _gsheets import get_sheet
 
 load_dotenv()
 
-TABLE = "listings"
+SHEET_NAME = "listings"
+
+# Column order must match the header row in the Google Sheet exactly.
+# Mirrors the Supabase schema from migrations/001_create_listings.sql,
+# with battery_replaced and has_aftermarket_part appended at the end
+# (they were never added to Supabase but are present in parsed dicts).
+SHEET_COLUMNS = [
+    "id",
+    "date_posted",
+    "series",
+    "variant",
+    "model",
+    "storage_gb",
+    "color",
+    "battery_health",
+    "physical_condition",
+    "origin_type",
+    "regional_code",
+    "garansi_aktif",
+    "garansi_expired_fullset",
+    "has_box",
+    "has_charger",
+    "has_manual",
+    "face_id_ok",
+    "lcd_original",
+    "battery_replaced",
+    "has_aftermarket_part",
+    "price_idr",
+    "source_code",
+    "notes",
+    "created_at",
+]
 
 
 # ---------------------------------------------------------------------------
-# Supabase client
+# Dedup check
 # ---------------------------------------------------------------------------
 
-def _get_client() -> Client:
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_KEY")
-    if not url or not key:
-        raise EnvironmentError("SUPABASE_URL and SUPABASE_KEY must be set in .env")
-    return create_client(url, key)
+def _fetch_existing_source_codes(sheet) -> set[str]:
+    """
+    Return the set of source_codes already in the sheet.
+    Fetches only the source_code column to minimise data transfer.
+    """
+    headers = sheet.row_values(1)
+    if "source_code" not in headers:
+        return set()
+
+    col_idx = headers.index("source_code") + 1   # gspread is 1-indexed
+    values  = sheet.col_values(col_idx)
+    return {v for v in values[1:] if v}           # skip header row
 
 
 # ---------------------------------------------------------------------------
-# Duplicate detection
+# Row serialisation
 # ---------------------------------------------------------------------------
 
-def _fetch_existing_source_codes(client: Client) -> set[str]:
-    """Return the set of source_codes already stored in Supabase."""
-    response = client.table(TABLE).select("source_code").execute()
-    return {row["source_code"] for row in response.data if row.get("source_code")}
+def _listing_to_row(listing: dict) -> list:
+    """Convert a parsed listing dict to an ordered list matching SHEET_COLUMNS."""
+    now = datetime.now(timezone.utc).isoformat()
+
+    def _bool(v) -> str:
+        """Sheets stores booleans as TRUE/FALSE strings."""
+        if v is None:
+            return ""
+        return "TRUE" if v else "FALSE"
+
+    def _date(v) -> str:
+        return str(v) if v is not None else ""
+
+    return [
+        str(uuid.uuid4()),                                     # id
+        _date(listing.get("date_posted")),                     # date_posted
+        listing.get("series")             or "",               # series
+        listing.get("variant")            or "",               # variant
+        listing.get("model")              or "",               # model
+        listing.get("storage_gb")         or "",               # storage_gb
+        listing.get("color")              or "",               # color
+        listing.get("battery_health")     or "",               # battery_health
+        listing.get("physical_condition") or "",               # physical_condition
+        listing.get("origin_type")        or "",               # origin_type
+        listing.get("regional_code")      or "",               # regional_code
+        _bool(listing.get("garansi_aktif")),                   # garansi_aktif
+        _date(listing.get("garansi_expired_fullset")),         # garansi_expired_fullset
+        _bool(listing.get("has_box")),                         # has_box
+        _bool(listing.get("has_charger")),                     # has_charger
+        _bool(listing.get("has_manual")),                      # has_manual
+        _bool(listing.get("face_id_ok")),                      # face_id_ok
+        _bool(listing.get("lcd_original")),                    # lcd_original
+        _bool(listing.get("battery_replaced")),                # battery_replaced
+        _bool(listing.get("has_aftermarket_part")),            # has_aftermarket_part
+        listing.get("price_idr")          or "",               # price_idr
+        listing.get("source_code")        or "",               # source_code
+        listing.get("notes")              or "",               # notes
+        now,                                                   # created_at
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -82,12 +155,12 @@ def run_pipeline(
 
     print(f"[pipeline] {len(raw_records)} raw posts loaded.")
 
-    # 2. Connect to Supabase ------------------------------------------------
-    client = _get_client()
-    existing_codes = _fetch_existing_source_codes(client)
-    print(f"[pipeline] {len(existing_codes)} source_codes already in Supabase.")
+    # 2. Connect to Google Sheets ----------------------------------------
+    sheet = get_sheet(SHEET_NAME)
+    existing_codes = _fetch_existing_source_codes(sheet)
+    print(f"[pipeline] {len(existing_codes)} source_codes already in sheet.")
 
-    # 3. Parse + filter duplicates -----------------------------------------
+    # 3. Parse + filter duplicates ---------------------------------------
     new_listings: list[dict] = []
     skipped_duplicates = 0
     skipped_parse_fail = 0
@@ -121,10 +194,7 @@ def run_pipeline(
     print(f"[pipeline] {skipped_duplicates} skipped (duplicate source_code).")
     print(f"[pipeline] {skipped_parse_fail} skipped (parse failed / not iPhone listing).")
 
-    # 4. Insert to Supabase -------------------------------------------------
-    # Note: battery_replaced and has_aftermarket_part are now included in
-    # parsed dicts. Requires a Supabase migration adding these BOOLEAN columns
-    # before running the pipeline against the live table.
+    # 4. Append to Google Sheets -----------------------------------------
     if not new_listings:
         print("[pipeline] Nothing to insert. Done.")
         return
@@ -134,11 +204,12 @@ def run_pipeline(
 
     for i in range(0, len(new_listings), BATCH_SIZE):
         batch = new_listings[i : i + BATCH_SIZE]
-        response = client.table(TABLE).insert(batch).execute()
-        inserted += len(response.data)
+        rows  = [_listing_to_row(listing) for listing in batch]
+        sheet.append_rows(rows, value_input_option="RAW")
+        inserted += len(rows)
 
     print("=" * 60)
-    print(f"[pipeline] DONE — {inserted} new listings inserted to Supabase.")
+    print(f"[pipeline] DONE — {inserted} new listings appended to Google Sheets.")
     print("=" * 60)
 
 
