@@ -26,7 +26,9 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, r2_score
 from sklearn.model_selection import KFold, cross_val_score
 from sklearn.preprocessing import LabelEncoder
-from supabase import create_client
+# supabase import intentionally omitted — train.py is an offline script and
+# must not pull in supabase at import time (breaks Vercel / api/check.py).
+# _load_from_supabase() imports create_client lazily when actually called.
 
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
@@ -73,6 +75,7 @@ FEATURES = [
 # ---------------------------------------------------------------------------
 
 def _load_from_supabase() -> pd.DataFrame:
+    from supabase import create_client  # lazy — only needed during training
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_KEY")
     if not url or not key:
