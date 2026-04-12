@@ -1,4 +1,4 @@
-apify-client==1.8.1
+apify-client>=2.5.0
 # supabase==2.4.6  # deprecated — migrated to Google Sheets
 gspread>=6.0.0
 python-dotenv==1.0.1
