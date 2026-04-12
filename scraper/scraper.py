@@ -2,7 +2,7 @@
 scraper.py — Apify-based scraper for @cherishcomapple.
 
 Uses the Apify Instagram Scraper actor (apify/instagram-scraper) to fetch
-posts from 2026-01-01 up to today. Raw captions are saved to
+posts from a given date up to today. Raw captions are saved to
 raw_captions.json as a backup for pipeline resume.
 
 Requires APIFY_API_TOKEN in .env.
@@ -10,38 +10,70 @@ Requires APIFY_API_TOKEN in .env.
 
 import json
 import os
+import sys
 import time
 from datetime import date
 from pathlib import Path
 
 from apify_client import ApifyClient
 from dotenv import load_dotenv
-from supabase import create_client
 
 load_dotenv()
 
+# Make api/ importable for _gsheets helper
+sys.path.insert(0, str(Path(__file__).parent.parent / "api"))
+
 TARGET_PROFILE  = "cherishcomapple"
 RAW_OUTPUT_FILE = Path(__file__).parent / "raw_captions.json"
-FALLBACK_START  = date(2025, 11, 1)   # used when Supabase is empty (first-time setup)
+FALLBACK_START  = date(2025, 11, 1)   # used when no data found (first-time setup)
 
 # Apify actor for Instagram scraping
 ACTOR_ID = "apify/instagram-scraper"
 
 
+def _get_since_from_sheets() -> date:
+    """Return MAX(date_posted) from Google Sheets, or FALLBACK_START if sheet is empty."""
+    try:
+        from _gsheets import get_sheet
+        sheet = get_sheet("listings")
+        headers = sheet.row_values(1)
+        if "date_posted" not in headers:
+            print(f"[scraper] 'date_posted' column not found in sheet — using fallback {FALLBACK_START}.")
+            return FALLBACK_START
+        col_idx = headers.index("date_posted") + 1  # gspread is 1-indexed
+        values = sheet.col_values(col_idx)[1:]       # skip header
+        dates = [v for v in values if v]
+        if dates:
+            latest = date.fromisoformat(max(dates))
+            print(f"[scraper] Latest date_posted in Google Sheets: {latest}. Using as scrape start.")
+            return latest
+    except Exception as e:
+        print(f"[scraper] Could not query Google Sheets ({e}) — using fallback start date {FALLBACK_START}.")
+    print(f"[scraper] No rows in Google Sheets — using fallback start date {FALLBACK_START}.")
+    return FALLBACK_START
+
+
 def _get_since_from_supabase() -> date:
-    """Return MAX(date_posted) from listings, or FALLBACK_START if table is empty."""
+    """Return MAX(date_posted) from Supabase listings, or FALLBACK_START if table is empty.
+
+    Kept as a fallback. Supabase import is lazy to avoid ImportError if the
+    package is not installed.
+    """
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_KEY")
     if not url or not key:
         print(f"[scraper] Supabase creds not set — using fallback start date {FALLBACK_START}.")
         return FALLBACK_START
     try:
+        from supabase import create_client  # lazy — supabase may not be installed
         client = create_client(url, key)
         resp = client.table("listings").select("date_posted").order("date_posted", desc=True).limit(1).execute()
         if resp.data and resp.data[0].get("date_posted"):
             latest = date.fromisoformat(resp.data[0]["date_posted"])
             print(f"[scraper] Latest date_posted in Supabase: {latest}. Using as scrape start.")
             return latest
+    except ImportError:
+        print(f"[scraper] supabase package not installed — using fallback start date {FALLBACK_START}.")
     except Exception as e:
         print(f"[scraper] Could not query Supabase ({e}) — using fallback start date {FALLBACK_START}.")
     print(f"[scraper] No rows in Supabase — using fallback start date {FALLBACK_START}.")
@@ -66,9 +98,10 @@ def scrape_profile(
     resume_from_json : If True and raw_captions.json exists, merge new
                        results with the existing cache (dedup by shortcode).
     since            : Earliest post date to include (inclusive).
+                       Defaults to MAX(date_posted) from Google Sheets.
     """
     if since is None:
-        since = _get_since_from_supabase()
+        since = _get_since_from_sheets()
 
     api_token = os.getenv("APIFY_API_TOKEN")
     if not api_token:

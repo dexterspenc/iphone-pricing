@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS listings (
     has_manual              BOOLEAN,
     face_id_ok              BOOLEAN,
     lcd_original            BOOLEAN,
+    battery_replaced        BOOLEAN DEFAULT FALSE,
+    has_aftermarket_part    BOOLEAN DEFAULT FALSE,
     price_idr               BIGINT,
     source_code             TEXT UNIQUE,        -- Kode Barang e.g. CC28865
     notes                   TEXT,               -- nullable; any extra info

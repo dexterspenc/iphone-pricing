@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 
 import joblib
@@ -26,11 +27,14 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, r2_score
 from sklearn.model_selection import KFold, cross_val_score
 from sklearn.preprocessing import LabelEncoder
-# supabase import intentionally omitted — train.py is an offline script and
-# must not pull in supabase at import time (breaks Vercel / api/check.py).
-# _load_from_supabase() imports create_client lazily when actually called.
+# supabase and gspread imports are intentionally omitted at module level —
+# train.py must not pull them in at import time (breaks Vercel / api/check.py).
+# Both _load_from_sheets() and _load_from_supabase() import lazily.
 
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
+
+# Make api/ importable for _gsheets helper
+sys.path.insert(0, str(Path(__file__).parent.parent / "api"))
 
 MODEL_DIR   = Path(__file__).parent / "saved_models"
 MODEL_PATH  = MODEL_DIR / "iphone_price_model.joblib"
@@ -74,7 +78,35 @@ FEATURES = [
 # Data loading
 # ---------------------------------------------------------------------------
 
+def _load_from_sheets() -> pd.DataFrame:
+    """Load all listings from Google Sheets (primary data source)."""
+    from _gsheets import get_sheet  # lazy — only needed during training
+    sheet = get_sheet("listings")
+    records = sheet.get_all_records()
+    if not records:
+        raise ValueError("Google Sheets 'listings' tab is empty.")
+    df = pd.DataFrame(records)
+    # Sheets returns empty strings for missing values — normalise to None/NaN
+    df.replace("", None, inplace=True)
+    # Boolean columns stored as "TRUE"/"FALSE" strings
+    bool_cols = [
+        "garansi_aktif", "has_box", "has_charger", "has_manual",
+        "face_id_ok", "lcd_original", "battery_replaced", "has_aftermarket_part",
+    ]
+    for col in bool_cols:
+        if col in df.columns:
+            df[col] = df[col].apply(
+                lambda v: True if str(v).upper() == "TRUE" else (False if str(v).upper() == "FALSE" else None)
+            )
+    print(f"[train] Loaded {len(df)} rows from Google Sheets.")
+    return df
+
+
 def _load_from_supabase() -> pd.DataFrame:
+    """Load all listings from Supabase (fallback data source).
+
+    Supabase import is lazy to avoid ImportError if the package is not installed.
+    """
     from supabase import create_client  # lazy — only needed during training
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_KEY")
@@ -88,7 +120,17 @@ def _load_from_supabase() -> pd.DataFrame:
         if len(batch) < page:
             break
         offset += page
+    print(f"[train] Loaded {len(rows)} rows from Supabase.")
     return pd.DataFrame(rows)
+
+
+def load_data() -> pd.DataFrame:
+    """Load training data — tries Google Sheets first, falls back to Supabase."""
+    try:
+        return _load_from_sheets()
+    except Exception as e:
+        print(f"[train] Google Sheets unavailable ({e}). Falling back to Supabase ...")
+        return _load_from_supabase()
 
 
 # ---------------------------------------------------------------------------
@@ -188,8 +230,8 @@ def engineer_features(df: pd.DataFrame, encoders: dict | None = None, fit: bool 
 # ---------------------------------------------------------------------------
 
 def train(eval_only: bool = False) -> None:
-    print("[train] Loading data from Supabase ...")
-    df_raw = _load_from_supabase()
+    print("[train] Loading data ...")
+    df_raw = load_data()
     print(f"[train] {len(df_raw)} total rows loaded.")
 
     # Clean: require series, storage, price; drop placeholder prices
