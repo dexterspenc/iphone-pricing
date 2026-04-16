@@ -31,6 +31,8 @@ class PredictRequest(BaseModel):
     has_manual: bool = True
     face_id_ok: bool = True
     lcd_original: bool = True
+    battery_replaced: bool = False
+    has_aftermarket_part: bool = False
     listing_price: Optional[int] = None
 
 
@@ -51,6 +53,8 @@ def predict(req: PredictRequest):
         has_manual=req.has_manual,
         face_id_ok=req.face_id_ok,
         lcd_original=req.lcd_original,
+        battery_replaced=req.battery_replaced,
+        has_aftermarket_part=req.has_aftermarket_part,
     )
     if req.listing_price:
         result["verdict"] = make_verdict(

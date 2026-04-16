@@ -1,5 +1,6 @@
 """api/listings.py — GET /api/listings"""
 import sys
+import time
 import traceback
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))        # api/  (for _gsheets)
@@ -16,6 +17,9 @@ from _gsheets import get_sheet
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+_listings_cache: dict = {"data": [], "ts": 0.0}
+_CACHE_TTL = 300  # seconds
 
 # Columns returned in the response — matches the original Supabase SELECT exactly.
 _RESPONSE_COLS = {
@@ -55,8 +59,13 @@ def _coerce(record: dict) -> dict:
 @app.get("/api/listings")
 def listings(limit: int = 50, series: Optional[int] = None, variant: Optional[str] = None):
     try:
-        sheet = get_sheet("listings")
-        data  = sheet.get_all_records()   # list of dicts keyed by header row
+        now = time.time()
+        if now - _listings_cache["ts"] > _CACHE_TTL:
+            sheet = get_sheet("listings")
+            _listings_cache["data"] = sheet.get_all_records()
+            _listings_cache["ts"]   = now
+
+        data = list(_listings_cache["data"])
 
         # Filter in Python (equivalent to WHERE series=? AND variant=?)
         if series is not None:

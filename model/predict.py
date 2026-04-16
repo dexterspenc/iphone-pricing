@@ -24,17 +24,21 @@ import json
 import pandas as pd
 
 
+_cache: dict = {}
+
+
 def _load():
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(
-            f"No trained model found at {MODEL_PATH}. "
-            "Run: python model/train.py"
-        )
-    model    = joblib.load(MODEL_PATH)
-    encoders = joblib.load(ENC_PATH)
-    with META_PATH.open() as f:
-        meta = json.load(f)
-    return model, encoders, meta
+    if not _cache:
+        if not MODEL_PATH.exists():
+            raise FileNotFoundError(
+                f"No trained model found at {MODEL_PATH}. "
+                "Run: python model/train.py"
+            )
+        _cache["model"]    = joblib.load(MODEL_PATH)
+        _cache["encoders"] = joblib.load(ENC_PATH)
+        with META_PATH.open() as f:
+            _cache["meta"] = json.load(f)
+    return _cache["model"], _cache["encoders"], _cache["meta"]
 
 
 def predict_price(
