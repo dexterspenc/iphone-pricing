@@ -4,6 +4,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))   # api/
 sys.path.insert(0, str(Path(__file__).parent.parent))  # root
 
+import os
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -12,7 +14,8 @@ from typing import Optional
 from _shared import build_result, parse_caption
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")]
+app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_methods=["*"], allow_headers=["*"])
 
 
 class CheckRequest(BaseModel):

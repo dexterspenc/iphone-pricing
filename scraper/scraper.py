@@ -157,7 +157,8 @@ def scrape_profile(
             else:
                 date_posted = date.fromisoformat(str(raw_ts)[:10])
         except (ValueError, TypeError, OSError):
-            date_posted = today  # fallback
+            print(f"[scraper] WARNING: Could not parse timestamp '{raw_ts}' for shortcode '{shortcode}' — skipping post.")
+            continue
 
         # Hard cutoff — skip posts before since
         if date_posted < since:

@@ -6,6 +6,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))        # api/  (for _gsheets)
 sys.path.insert(0, str(Path(__file__).parent.parent)) # root
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
@@ -16,7 +18,8 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 from _gsheets import get_sheet
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")]
+app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_methods=["*"], allow_headers=["*"])
 
 _listings_cache: dict = {"data": [], "ts": 0.0}
 _CACHE_TTL = 300  # seconds
