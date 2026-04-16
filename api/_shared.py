@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
 from scraper.parser import parse_caption          # noqa: E402
-from model.predict import predict_range            # noqa: E402
+from model.predict import predict_range, _load    # noqa: E402
 
 
 # ── verdict ───────────────────────────────────────────────────────────────────
@@ -85,10 +85,78 @@ def make_resale(predicted: float, asking: Optional[int]) -> dict:
     return result
 
 
+# ── fallback-safe prediction ──────────────────────────────────────────────────
+
+# Ordered variant fallback chain: each entry is tried in sequence on ValueError.
+_VARIANT_FALLBACK_CHAIN: dict[str, list[str]] = {
+    "Pro Max": ["Pro", "Regular"],
+    "Pro Plus": ["Pro", "Regular"],
+    "Plus":    ["Regular"],
+    "Pro":     ["Regular"],
+}
+
+_INSUFFICIENT_DATA_MSG = "Data untuk seri ini masih terlalu sedikit untuk diprediksi oleh AI."
+
+
+def _insufficient_data_response(*, fallback_variant: Optional[str] = None) -> dict:
+    """Sentinel response returned when no valid prediction can be made."""
+    resp: dict = {
+        "predicted_idr":    0,
+        "low_idr":          0,
+        "high_idr":         0,
+        "insufficient_data": True,
+        "warning":          _INSUFFICIENT_DATA_MSG,
+    }
+    if fallback_variant:
+        resp["fallback_variant"] = fallback_variant
+    return resp
+
+
+def safe_predict_range(series: int, **kwargs) -> dict:
+    """predict_range with graceful fallback for unseen series or labels.
+
+    Fallback order:
+    1. Series not in training data → return insufficient-data sentinel (no
+       useful extrapolation possible for a wholly unseen series).
+    2. Unseen label (ValueError from LabelEncoder) → retry with progressively
+       simpler variants ("Pro Max" → "Pro" → "Regular").
+    3. All variants exhausted → return insufficient-data sentinel.
+
+    The returned dict is always structurally identical to predict_range's output
+    so callers never need to branch on the shape — only on the optional
+    `insufficient_data` / `warning` keys.
+    """
+    _, _, meta = _load()
+    series_seen: set[int] = set(meta.get("series_seen", []))
+
+    if series_seen and series not in series_seen:
+        return _insufficient_data_response()
+
+    variant: str = kwargs.pop("variant", "Regular")
+    fallbacks: list[str] = _VARIANT_FALLBACK_CHAIN.get(variant, [])
+    candidates: list[str] = [variant] + [v for v in fallbacks if v != variant]
+
+    for candidate in candidates:
+        try:
+            result = predict_range(series=series, variant=candidate, **kwargs)
+            if candidate != variant:
+                # Prediction succeeded on a degraded variant — flag it
+                result["fallback_variant"] = candidate
+                result["warning"] = (
+                    f"Varian '{variant}' belum ada di data training. "
+                    f"Prediksi menggunakan '{candidate}' sebagai baseline."
+                )
+            return result
+        except ValueError:
+            continue
+
+    return _insufficient_data_response()
+
+
 # ── build full result ─────────────────────────────────────────────────────────
 
 def build_result(parsed: dict, listing_price: Optional[int]) -> dict:
-    result = predict_range(
+    result = safe_predict_range(
         series=parsed["series"],
         variant=parsed.get("variant", "Regular"),
         storage_gb=parsed.get("storage_gb") or 128,
@@ -107,21 +175,25 @@ def build_result(parsed: dict, listing_price: Optional[int]) -> dict:
         has_aftermarket_part=parsed.get("has_aftermarket_part", False),
     )
 
-    predicted = result["predicted_idr"]
-    low       = result["low_idr"]
-    high      = result["high_idr"]
+    predicted        = result["predicted_idr"]
+    low              = result["low_idr"]
+    high             = result["high_idr"]
+    insufficient     = result.get("insufficient_data", False)
 
     price_block: dict = {
-        "predicted": predicted,
-        "low":       low,
-        "high":      high,
-        "asking":    listing_price,
-        "verdict":   None,
-        "nego":      None,
-        "resale":    make_resale(predicted, listing_price),
+        "predicted":         predicted,
+        "low":               low,
+        "high":              high,
+        "asking":            listing_price,
+        "verdict":           None,
+        "nego":              None,
+        "resale":            make_resale(predicted, listing_price) if not insufficient else None,
+        "insufficient_data": insufficient,
+        "warning":           result.get("warning"),
+        "fallback_variant":  result.get("fallback_variant"),
     }
 
-    if listing_price:
+    if listing_price and not insufficient:
         vd = make_verdict(listing_price, low, high, predicted)
         price_block["verdict"] = vd
         price_block["nego"]    = make_nego(listing_price, predicted, high, vd["diff_pct"])
@@ -164,6 +236,12 @@ def format_tg_reply(result: dict) -> str:
     origin = specs.get("origin_type", "?") or "?"
     rc     = specs.get("regional_code", "?") or "?"
 
+    # ── insufficient data: short-circuit with a friendly message ─────────────
+    if price.get("insufficient_data"):
+        header = f"<b>{model} {st}GB</b>{' ' + color if color else ''}"
+        warning = price.get("warning", _INSUFFICIENT_DATA_MSG)
+        return f"{header}\n\n⚠️ {warning}"
+
     pred   = price["predicted"]
     low    = price["low"]
     high   = price["high"]
@@ -175,6 +253,13 @@ def format_tg_reply(result: dict) -> str:
     lines = [
         f"<b>{model} {st}GB</b>{' ' + color if color else ''}",
         f"BH: {bh}%  |  {origin}  |  {rc}",
+    ]
+
+    # Surface fallback-variant warning if prediction was degraded
+    if price.get("warning"):
+        lines += ["", f"⚠️ <i>{price['warning']}</i>"]
+
+    lines += [
         "",
         "💰 <b>Analisis Harga</b>",
         f"Prediksi wajar: <b>{_fmt(pred)}</b>",

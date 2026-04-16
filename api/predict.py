@@ -11,8 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 
-from _shared import make_verdict
-from model.predict import predict_range
+from _shared import make_verdict, safe_predict_range
 
 app = FastAPI()
 _origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")]
@@ -41,7 +40,7 @@ class PredictRequest(BaseModel):
 
 @app.post("/api/predict")
 def predict(req: PredictRequest):
-    result = predict_range(
+    result = safe_predict_range(
         series=req.series,
         variant=req.variant,
         storage_gb=req.storage_gb,
@@ -59,6 +58,10 @@ def predict(req: PredictRequest):
         battery_replaced=req.battery_replaced,
         has_aftermarket_part=req.has_aftermarket_part,
     )
+    # If data was insufficient, return the sentinel as-is (200 with warning fields).
+    if result.get("insufficient_data"):
+        return result
+
     if req.listing_price:
         result["verdict"] = make_verdict(
             req.listing_price, result["low_idr"], result["high_idr"], result["predicted_idr"]
