@@ -1,5 +1,5 @@
 {
-  "n_samples": 1587,
+  "n_samples": 1585,
   "features": [
     "series_num",
     "storage_gb",
@@ -22,12 +22,12 @@
     "is_latest",
     "series_x_storage"
   ],
-  "cv_r2_mean": 0.9864,
-  "cv_r2_std": 0.0078,
-  "cv_mae_mean": 355939.0,
-  "cv_mae_std": 37405.0,
+  "cv_r2_mean": 0.9867,
+  "cv_r2_std": 0.0086,
+  "cv_mae_mean": 355761.0,
+  "cv_mae_std": 49698.0,
   "train_r2": 0.9918,
-  "train_mae": 290100.0,
+  "train_mae": 291978.0,
   "gbr_params": {
     "alpha": 0.9,
     "ccp_alpha": 0.0,
@@ -52,7 +52,6 @@
     "warm_start": false
   },
   "series_seen": [
-    8,
     11,
     12,
     13,

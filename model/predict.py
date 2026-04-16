@@ -90,16 +90,28 @@ def predict_price(
 
 
 def predict_range(series: int, **kwargs) -> dict:
-    """Return predicted price with a +/-15% confidence interval.
+    """Return predicted price with a data-driven confidence interval.
 
-    Within-group price std across models is 7-13%, so ±15% covers ~1 sigma
-    naturally and avoids excessive false DEAL/OVERPRICE verdicts.
+    The band width is controlled by `volatility_factor` stored in model metadata.
+    Within-group price std across listings is 7-13%, so the default of ±15%
+    covers ~1 sigma and avoids excessive false DEAL/OVERPRICE verdicts.
+
+    The `volatility_factor` field in metadata is a placeholder for a future
+    Quantile Regression implementation.  Once QR is trained, train.py will
+    write the empirical interquartile spread here and this function will pick
+    it up automatically without any further changes.
     """
+    _, _, meta = _load()
+
+    # Use per-model volatility if available; fall back to ±15% default.
+    # TODO: replace with QR-derived quantiles (q10/q90) in the next training cycle.
+    volatility_factor: float = meta.get("volatility_factor", 0.15)
+
     price = predict_price(series=series, **kwargs)
     return {
         "predicted_idr": round(price, -3),
-        "low_idr":        round(price * 0.85, -3),
-        "high_idr":       round(price * 1.15, -3),
+        "low_idr":        round(price * (1 - volatility_factor), -3),
+        "high_idr":       round(price * (1 + volatility_factor), -3),
     }
 
 
@@ -141,5 +153,5 @@ if __name__ == "__main__":
 
     print(f"Listing price:   IDR {LISTING_PRICE:>15,.0f}")
     print(f"Predicted price: IDR {predicted:>15,.0f}  ({diff_pct:+.1f}% vs listing)")
-    print(f"Range (+/-10%):  IDR {low:>15,.0f}  -  IDR {high:,.0f}")
+    print(f"Range (+/-15%):  IDR {low:>15,.0f}  -  IDR {high:,.0f}")
     print(f"Verdict:         {label}")

@@ -172,16 +172,13 @@ def engineer_features(df: pd.DataFrame, encoders: dict | None = None, fit: bool 
         df[c] = df[c].fillna(False).astype(int) if c in df.columns else 0
 
     # ---- warranty days remaining ----
-    def _days(row):
-        val = row.get("garansi_expired_fullset")
-        if not val:
-            return 0
-        try:
-            return max(0, (date.fromisoformat(str(val)) - today).days)
-        except ValueError:
-            return 0
-
-    df["garansi_days_remaining"] = df.apply(_days, axis=1).astype(float)
+    expiry = pd.to_datetime(df["garansi_expired_fullset"], errors="coerce")
+    df["garansi_days_remaining"] = (
+        (expiry - pd.Timestamp(today)).dt.days
+        .clip(lower=0)
+        .fillna(0)
+        .astype(float)
+    )
 
     # ---- label encode categoricals ----
     if encoders is None:
@@ -238,7 +235,17 @@ def train(eval_only: bool = False) -> None:
     df = df_raw.dropna(subset=["series", "storage_gb", "price_idr"]).copy()
     df["price_idr"] = pd.to_numeric(df["price_idr"], errors="coerce")
     df = df[df["price_idr"] >= 1_000_000]   # explicit floor — guards against price=1 placeholders
-    df = df[df["series"] != 7]              # iPhone 7: only 2 rows, no meaningful signal
+
+    # Dynamic series exclusion: drop any series with fewer than MIN_SERIES_SAMPLES rows
+    MIN_SERIES_SAMPLES = 10
+    series_counts = df["series"].value_counts()
+    excluded_series = series_counts[series_counts < MIN_SERIES_SAMPLES].index.tolist()
+    if excluded_series:
+        print(f"[train] Excluding series with < {MIN_SERIES_SAMPLES} samples: {sorted(excluded_series)}")
+        df = df[~df["series"].isin(excluded_series)]
+    else:
+        print(f"[train] All series meet the minimum sample threshold ({MIN_SERIES_SAMPLES}).")
+
     print(f"[train] {len(df)} clean rows after filtering (dropped {len(df_raw) - len(df)}).")
 
     X, encoders = engineer_features(df, fit=True)
